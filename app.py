@@ -1,162 +1,95 @@
-from flask import Flask, render_template, Response
+import streamlit as st
 import cv2
-import winsound
 import time
 import pyttsx3
 
-app = Flask(__name__)
+st.title("🚗 Driver Drowsiness Detection")
 
-# Voice engine
+# Initialize voice
 engine = pyttsx3.init()
+
+def speak(text):
+    engine.say(text)
+    engine.runAndWait()
 
 # Load cascades
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
 mouth_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_smile.xml')
 
+run = st.checkbox("Start Camera")
+
+FRAME_WINDOW = st.image([])
+
 camera = cv2.VideoCapture(0)
 
-running = True  # for start/stop
+eye_closed_frames = 0
+blink_count = 0
+last_eye_open = True
+start_time = time.time()
 
-def speak(text):
-    engine.say(text)
-    engine.runAndWait()
+while run:
+    ret, frame = camera.read()
+    if not ret:
+        st.write("Camera error")
+        break
 
-def generate_frames():
-    global running
-    eye_closed_frames = 0
-    blink_count = 0
-    last_eye_open = True
-    start_time = time.time()
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-    while True:
-        if not running:
-            continue
+    faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+    status = "SAFE"
+    current_time = int(time.time() - start_time)
 
-        success, frame = camera.read()
-        if not success:
-            break
+    for (x, y, w, h) in faces:
+        cv2.rectangle(frame, (x,y), (x+w,y+h), (255,0,0), 2)
 
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        roi_gray = gray[y:y+h, x:x+w]
+        roi_color = frame[y:y+h, x:x+w]
 
-        faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+        # Eye detection
+        eyes = eye_cascade.detectMultiScale(roi_gray, 1.1, 5)
 
-        status = "SAFE"
-        current_time = int(time.time() - start_time)
+        if len(eyes) == 0:
+            eye_closed_frames += 1
+            if last_eye_open:
+                blink_count += 1
+            last_eye_open = False
+        else:
+            eye_closed_frames = 0
+            last_eye_open = True
 
-        for (x, y, w, h) in faces:
-            cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
+        # Mouth detection (yawning)
+        roi_gray_lower = roi_gray[int(h/2):h, :]
+        mouths = mouth_cascade.detectMultiScale(roi_gray_lower, 1.5, 15)
 
-            # 👀 Attention detection (face center)
-            frame_center = frame.shape[1] // 2
-            face_center = x + w // 2
+        if len(mouths) > 0:
+            cv2.putText(frame, "YAWNING!", (50,150),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255,0,0), 3)
+            speak("You are yawning")
 
-            if abs(face_center - frame_center) > 100:
-                cv2.putText(frame, "LOOK AT ROAD!", (50, 300),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 3)
+    # Drowsiness logic
+    if eye_closed_frames > 5:
+        status = "WARNING"
 
-            roi_gray = gray[y:y+h, x:x+w]
-            roi_color = frame[y:y+h, x:x+w]
+    if eye_closed_frames > 10:
+        status = "DROWSY"
+        speak("Wake up driver")
 
-            # 👀 Eye detection
-            eyes = eye_cascade.detectMultiScale(
-                roi_gray,
-                scaleFactor=1.1,
-                minNeighbors=5,
-                minSize=(30, 30)
-            )
+    drowsy_percent = min(100, eye_closed_frames * 5)
 
-            if len(eyes) == 0:
-                eye_closed_frames += 1
-                if last_eye_open:
-                    blink_count += 1
-                last_eye_open = False
-            else:
-                eye_closed_frames = 0
-                last_eye_open = True
+    # Display text
+    cv2.putText(frame, f"Status: {status}", (50,50),
+                cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 3)
 
-            # 😮 Yawning detection
-            roi_gray_lower = roi_gray[int(h/2):h, :]
-            mouths = mouth_cascade.detectMultiScale(
-                roi_gray_lower,
-                scaleFactor=1.5,
-                minNeighbors=15
-            )
+    cv2.putText(frame, f"Blinks: {blink_count}", (50,100),
+                cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,0), 2)
 
-            if len(mouths) > 0:
-                cv2.putText(frame, "YAWNING!", (50,150),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (255,0,0), 3)
+    cv2.putText(frame, f"Time: {current_time}s", (50,200),
+                cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
 
-                winsound.Beep(2000, 300)
-                speak("You are yawning")
+    cv2.putText(frame, f"Drowsiness: {drowsy_percent}%", (50,250),
+                cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,255), 2)
 
-        # 🚨 Drowsiness logic
-        if eye_closed_frames > 5:
-            status = "WARNING"
+    FRAME_WINDOW.image(frame, channels="BGR")
 
-        if eye_closed_frames > 10:
-            status = "DROWSY"
-
-            for _ in range(2):
-                winsound.Beep(800, 300)
-
-            speak("Wake up driver")
-
-            # 📸 Screenshot
-            cv2.imwrite(f"sleep_{int(time.time())}.jpg", frame)
-
-        # 📊 Drowsiness %
-        drowsy_percent = min(100, eye_closed_frames * 5)
-
-        # ☕ Break message
-        if current_time > 20 and status == "DROWSY":
-            cv2.putText(frame, "TAKE A BREAK!", (50,200),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 3)
-
-        # Display info
-        cv2.putText(frame, f"Status: {status}", (50,50),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0), 3)
-
-        cv2.putText(frame, f"Blinks: {blink_count}", (50,100),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,0), 2)
-
-        cv2.putText(frame, f"Time: {current_time}s", (50,250),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
-
-        cv2.putText(frame, f"Drowsiness: {drowsy_percent}%", (50,300),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,255), 2)
-
-        ret, buffer = cv2.imencode('.jpg', frame)
-        frame = buffer.tobytes()
-
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-
-
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-
-@app.route('/video')
-def video():
-    return Response(generate_frames(),
-                    mimetype='multipart/x-mixed-replace; boundary=frame')
-
-
-@app.route('/start')
-def start():
-    global running
-    running = True
-    return "Started"
-
-
-@app.route('/stop')
-def stop():
-    global running
-    running = False
-    return "Stopped"
-
-
-if __name__ == "__main__":
-    app.run(debug=True)
+camera.release()
