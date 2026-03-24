@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Drowsiness Detection</title>
+
+    <style>
+        body {
+            background-color: #121212;
+            color: white;
+            text-align: center;
+            font-family: Arial;
+        }
+
+        h1 {
+            color: #00ffcc;
+        }
+
+        img {
+            border: 5px solid #00ffcc;
+            border-radius: 10px;
+        }
+
+        button {
+            padding: 10px 20px;
+            margin: 10px;
+            font-size: 16px;
+            border-radius: 5px;
+            border: none;
+            cursor: pointer;
+        }
+
+        .start { background-color: green; color: white; }
+        .stop { background-color: red; color: white; }
+    </style>
+
+    <script>
+        function startCam() {
+            fetch('/start');
+        }
+
+        function stopCam() {
+            fetch('/stop');
+        }
+    </script>
+
+</head>
+<body>
+
+    <h1>🚗 Driver Drowsiness Detection</h1>
+
+    <button class="start" onclick="startCam()">Start</button>
+    <button class="stop" onclick="stopCam()">Stop</button>
+
+    <br><br>
+
+    <img src="{{ url_for('video') }}" width="700">
+
+</body>
+</html>
