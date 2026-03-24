@@ -1,20 +1,11 @@
 import streamlit as st
 import cv2
 import time
-import pyttsx3
 
 # Page config
 st.set_page_config(page_title="Driver Drowsiness Detection", layout="wide")
 
 st.title("🚗 Driver Drowsiness Detection System")
-st.write("Monitor driver alertness using webcam")
-
-# Voice engine (works locally)
-engine = pyttsx3.init()
-
-def speak(text):
-    engine.say(text)
-    engine.runAndWait()
 
 # Load cascades
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
@@ -51,11 +42,11 @@ blink_count = 0
 last_eye_open = True
 start_time = time.time()
 
-# Main loop
+# Loop
 while st.session_state.run:
     ret, frame = camera.read()
     if not ret:
-        st.error("Camera not working")
+        st.error("Camera not working (Cloud does not support webcam)")
         break
 
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -66,14 +57,6 @@ while st.session_state.run:
 
     for (x, y, w, h) in faces:
         cv2.rectangle(frame, (x,y), (x+w,y+h), (255,0,0), 2)
-
-        # Attention check
-        frame_center = frame.shape[1] // 2
-        face_center = x + w // 2
-
-        if abs(face_center - frame_center) > 100:
-            cv2.putText(frame, "LOOK AT ROAD!", (50,300),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 3)
 
         roi_gray = gray[y:y+h, x:x+w]
 
@@ -96,7 +79,8 @@ while st.session_state.run:
         if len(mouths) > 0:
             cv2.putText(frame, "YAWNING!", (50,150),
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (255,0,0), 3)
-            speak("You are yawning")
+
+            st.warning("⚠️ You are yawning!")
 
     # Drowsiness logic
     if eye_closed_frames > 5:
@@ -104,7 +88,7 @@ while st.session_state.run:
 
     if eye_closed_frames > 10:
         status = "DROWSY"
-        speak("Wake up driver")
+        st.error("🚨 Wake up driver!")
 
     drowsy_percent = min(100, eye_closed_frames * 5)
 
